@@ -21,25 +21,40 @@ http://github.com/bitly/data_hacks
 """
 
 import sys
-import os
 from decimal import Decimal
+from optparse import OptionParser
+from collections import defaultdict
 
-def run():
+def run(stream, options):
     count = 0
-    data = {}
-    for line in sys.stdin:
+    skipped = 0
+    data = defaultdict(int)
+    if options.max:
+        max_v = Decimal(options.max)
+    for line in stream:
         line = line.strip()
         if not line:
             # skip empty lines (ie: newlines)
             continue
-        key, value = line.split()
         try:
+            if options.agg_values:
+                key, value = line.split()
+                value = int(value)
+            else:
+                key = line
+                value = 1
             t = Decimal(key)
         except:
             print >>sys.stderr, "invalid line %r" % line
-        count += int(value)
-        data[t] = data.get(t, 0) + int(value)
+            continue
+        if options.max and t > max_v:
+            skipped += value
+            continue
+        count += value              
+        data[t] += value
     calc_percentiles(data, count)
+    if skipped:
+        print skipped, "values outside of min/max"
         
 def calc_percentiles(data, count):
     # find the time it took for x entry, where x is the threshold
@@ -61,7 +76,17 @@ def calc_percentiles(data, count):
     
 
 if __name__ == "__main__":
-    if sys.stdin.isatty() or '--help' in sys.argv or '-h' in sys.argv:
-        print "Usage: cat data | %s" % os.path.basename(sys.argv[0])
+    parser = OptionParser()
+    parser.usage = "cat data | %prog [options]"
+    parser.add_option("-a", "--agg-values", dest="agg_values", default=False, action="store_true",
+                        help="Two column input format, space seperated with key<space>value")
+    parser.add_option("-x", "--max", dest="max", help="maximum value")
+    
+    (options, args) = parser.parse_args()
+
+
+    if sys.stdin.isatty():
+        parser.print_usage()
+        print "for more help use --help"
         sys.exit(1)
-    run()
+    run(sys.stdin, options)
